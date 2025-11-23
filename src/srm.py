@@ -1,14 +1,5 @@
-"""
-Social Relations Model (SRM) Implementation
-Section 2.1 from Hoff (2018) - "Additive and multiplicative effects network models"
-
-This module implements the ANOVA-style Social Relations Model for analyzing
-dyadic network data, specifically international trade data.
-"""
-
 import numpy as np
 import pandas as pd
-from typing import Tuple, Dict
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -38,21 +29,21 @@ class SocialRelationsModel:
         - ρ: dyadic correlation (correlation between ε_ij and ε_ji)
     """
 
-    def __init__(self, Y: np.ndarray, X: np.ndarray = None, node_names: list = None):
+    def __init__(self, Y, X=None, node_names=None):
         """
         Initialize the SRM with a sociomatrix and optional covariates.
 
         Parameters
         ----------
-        Y : np.ndarray
+        Y : array-like, shape (n_nodes, n_nodes)
             n×n sociomatrix where Y[i,j] is the relationship from i to j
-        X : np.ndarray, optional
+        X : array-like or dict, optional
             n×n×p array of covariates where X[i,j,:] are the p covariates for dyad (i,j)
             Can also be a dictionary with keys:
                 - 'row': n×p_r array of row (sender) covariates
                 - 'col': n×p_c array of column (receiver) covariates
                 - 'dyad': n×n×p_d array of dyadic covariates
-        node_names : list, optional
+        node_names : list of str, optional
             Names of the nodes (default: 0, 1, 2, ...)
         """
         if Y.shape[0] != Y.shape[1]:
@@ -63,7 +54,7 @@ class SocialRelationsModel:
         self.node_names = node_names if node_names else [str(i) for i in range(self.n)]
 
         # Process covariates
-        self.X = None
+        self.X = np.array([])
         self.covariate_names = []
         self.has_covariates = X is not None
 
@@ -78,18 +69,18 @@ class SocialRelationsModel:
                     raise ValueError("X must be n×n×p array or dictionary")
 
         # Results (to be computed)
-        self.mu = None
-        self.beta = None  # Regression coefficients
-        self.a = None
-        self.b = None
-        self.E = None
-        self.sigma2_a = None
-        self.sigma2_b = None
-        self.sigma_ab = None
-        self.sigma2 = None
-        self.rho = None
+        self.mu = np.nan
+        self.beta = np.array([])  # Regression coefficients
+        self.a = np.array([])
+        self.b = np.array([])
+        self.E = np.array([])
+        self.sigma2_a = np.nan
+        self.sigma2_b = np.nan
+        self.sigma_ab = np.nan
+        self.sigma2 = np.nan
+        self.rho = np.nan
 
-    def _construct_covariate_matrix(self, X_dict: dict) -> Tuple[np.ndarray, list]:
+    def _construct_covariate_matrix(self, X_dict):
         """
         Construct a full covariate matrix from dictionary of row, column, and dyadic covariates.
 
@@ -100,9 +91,9 @@ class SocialRelationsModel:
 
         Returns
         -------
-        X : np.ndarray
+        X : array-like, shape (n_nodes, n_nodes, n_covariates)
             n×n×p covariate matrix
-        names : list
+        names : list of str
             Names of covariates
         """
         covariate_arrays = []
@@ -146,7 +137,7 @@ class SocialRelationsModel:
         X = np.concatenate(covariate_arrays, axis=2)
         return X, names
 
-    def fit(self) -> 'SocialRelationsModel':
+    def fit(self):
         """
         Fit the Social Relations Model to the data.
         If covariates are provided, fits SRRM using alternating estimation.
@@ -193,17 +184,17 @@ class SocialRelationsModel:
 
         return self
 
-    def _fit_srrm(self, mask: np.ndarray, max_iter: int = 10, tol: float = 1e-6):
+    def _fit_srrm(self, mask, max_iter=10, tol=1e-6):
         """
         Fit SRRM using alternating least squares.
 
         Parameters
         ----------
-        mask : np.ndarray
+        mask : array-like, bool
             Boolean mask for off-diagonal elements
-        max_iter : int
+        max_iter : int, default=10
             Maximum number of iterations
-        tol : float
+        tol : float, default=1e-6
             Convergence tolerance
         """
         # Initialize row and column effects
@@ -252,18 +243,18 @@ class SocialRelationsModel:
         # Compute final residuals
         M = (self.X @ self.beta).reshape(self.n, self.n)
         self.E = self.Y - M - self.a[:, np.newaxis] - self.b[np.newaxis, :]
-        self.mu = None  # No grand mean in SRRM (absorbed into intercept if included)
+        self.mu = np.nan  # No grand mean in SRRM (absorbed into intercept if included)
 
-    def summary(self) -> pd.DataFrame:
+    def summary(self):
         """
         Get a summary of the fitted model.
 
         Returns
         -------
-        summary_df : pd.DataFrame
+        summary_df : pandas.DataFrame
             Summary statistics of the model
         """
-        if self.a is None:
+        if self.a.size == 0:
             raise ValueError("Model has not been fitted yet. Call fit() first.")
 
         total_var = self.sigma2_a + 2*self.sigma_ab + self.sigma2_b + self.sigma2
@@ -313,16 +304,16 @@ class SocialRelationsModel:
 
         return pd.DataFrame(summary)
 
-    def get_effects(self) -> pd.DataFrame:
+    def get_effects(self):
         """
         Get the estimated node effects.
 
         Returns
         -------
-        effects_df : pd.DataFrame
+        effects_df : pandas.DataFrame
             Node effects (row and column)
         """
-        if self.a is None:
+        if self.a.size == 0:
             raise ValueError("Model has not been fitted yet. Call fit() first.")
 
         return pd.DataFrame({
@@ -331,15 +322,14 @@ class SocialRelationsModel:
             'Column Effect (b_i)': self.b
         })
 
-    def plot_effects(self, figsize: Tuple[int, int] = (14, 6),
-                    save_path: str = None) -> plt.Figure:
+    def plot_effects(self, figsize=(14, 6), save_path=None):
         """
         Create visualization of model results (Figure 1 from Hoff 2018).
 
         Parameters
         ----------
-        figsize : tuple, optional
-            Figure size (default: (14, 6))
+        figsize : tuple, default=(14, 6)
+            Figure size
         save_path : str, optional
             Path to save the figure (default: None, don't save)
 
@@ -348,7 +338,7 @@ class SocialRelationsModel:
         fig : matplotlib.figure.Figure
             The created figure
         """
-        if self.a is None:
+        if self.a.size == 0:
             raise ValueError("Model has not been fitted yet. Call fit() first.")
 
         fig, axes = plt.subplots(1, 2, figsize=figsize)
@@ -410,8 +400,7 @@ class SocialRelationsModel:
         return fig
 
 
-def load_ir90s_data(data_folder: str, countries: list = None,
-                    load_covariates: bool = False) -> Tuple[np.ndarray, list, dict]:
+def load_ir90s_data(data_folder, countries=None, load_covariates=False):
     """
     Load and prepare the IR90s export data with optional covariates.
 
@@ -419,14 +408,14 @@ def load_ir90s_data(data_folder: str, countries: list = None,
     ----------
     data_folder : str
         Path to data folder
-    countries : list, optional
+    countries : list of str, optional
         List of country codes to include (default: all countries)
-    load_covariates : bool, optional
-        Whether to load node and dyadic covariates (default: False)
+    load_covariates : bool, default=False
+        Whether to load node and dyadic covariates
 
     Returns
     -------
-    Y : np.ndarray
+    Y : array-like
         Sociomatrix in log billions of dollars
     country_names : list
         List of country codes
